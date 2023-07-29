@@ -19,12 +19,43 @@ struct Sensors { //structure containing names of the sensors we need to get data
 
 Sensors sensors;
 bool cut_fractal = true;
-int timeout = 1;
+int delay = 1;
 string address;
 
+string getCmdOut(string cmd){  //function to get output of shell commands 
+    
+    string data;
+    const int max_buf = 256;
+    char buf[max_buf];
+    FILE *stream;
+
+    stream = popen(cmd.c_str(), "r");
+    if(stream){
+        while(!feof(stream)){
+            if(fgets(buf, max_buf, stream) != NULL) data.append(buf);
+        }
+        pclose(stream);
+    }
+    return data;
+}
+
 json setup() {
-    ifstream f("config.json");
-    json j = json::parse(f);
+    string path = "/home/" + getCmdOut("whoami") + "/.config/ESPSensorStats/";
+    path.replace(path.find('\n'), 1, "");
+    system(("mkdir " + path).c_str());
+    ifstream f((path + "config.json").c_str());
+    if(!f.good()) {
+        cerr << "Error: no config file found. Create it in the following path: " << path << "config.json" << endl;
+        exit(-1);
+    }
+    json j;
+    try {
+    j = json::parse(f);
+    }
+    catch(json::exception e) {
+        cerr << "Error: failed to parse JSON." << endl;
+        exit(-1);
+    }
 
     int i = 0, max_i;
     for (json::iterator it = j["data-to-include"].begin(); it != j["data-to-include"].end(); ++it) { //filling the first level
@@ -62,28 +93,11 @@ json setup() {
     };
 
     //writing settings to variables
-    timeout = j["settings"]["timeout"];
+    delay = j["settings"]["timeout"];
     cut_fractal = j["settings"]["cut_fractal"];
     address = j["settings"]["address"];
 
     return j;
-}
-
-string getCmdOut(string cmd){  //function to get output of shell commands 
-    
-    string data;
-    const int max_buf = 256;
-    char buf[max_buf];
-    FILE *stream;
-
-    stream = popen(cmd.c_str(), "r");
-    if(stream){
-        while(!feof(stream)){
-            if(fgets(buf, max_buf, stream) != NULL) data.append(buf);
-        }
-        pclose(stream);
-    }
-    return data;
 }
 
 bool checkIfExists(json j, int fl, int sl, int tl) {
@@ -104,7 +118,6 @@ int main(){
 
     while (true){
         int counter = 0;
-        system("clear");
         data = json::parse(getCmdOut("sensors -Aj 2>&1")); 
         json to_be_sent; //data that will be sent to client
         while (true) {
@@ -116,28 +129,28 @@ int main(){
 
                 if(j.contains("alias")) {
                     key = j["alias"]; //key that will be added to the to_be_sent object
-                    cout<< key << " ";        
+                    //cout<< key << " ";        
                 }
                 else { //if config doesn't contain an alias for the key, use key name instead
                     key = sensors.third_level[fl][sl][tl];
-                    cout<<key<<" ";
+                    //cout<<key<<" ";
                 }
 
                 val = curData;
                 if (cut_fractal) { //if fractal part of the value must be cut
-                    cout<<static_cast<int>(val);
+                    //cout<<static_cast<int>(val);
                     to_be_sent[key]["value"] = static_cast<int>(val);
                 }
                 else {
-                    cout<<val;
+                    //cout<<val;
                     to_be_sent[key]["value"] = val;
                 }
 
                 if(j.contains("unit")) { //if key contains unit
-                    cout << " " << static_cast<string>(j["unit"]);
+                    //cout << " " << static_cast<string>(j["unit"]);
                     to_be_sent[key]["unit"] = j["unit"];
                 }
-                cout<<endl;
+                //cout<<endl;
             }
             tl++;
             if (!checkIfExists(data, fl, sl, tl)) {
@@ -155,12 +168,12 @@ int main(){
         }  
         try {
             http::Request request(address);
-            request.send("POST", to_be_sent.dump());   
+            request.send("POST", to_be_sent.dump(), {}, milliseconds(1000));   
         }
         catch (exception e) {
-            cerr<<"error"<<endl;
+            cerr << "Error: request timeout." << endl;
         }
-        sleep_for(seconds(timeout));
+        sleep_for(seconds(delay));
     }
     return 0;
 }

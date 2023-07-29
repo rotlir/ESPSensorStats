@@ -1,0 +1,10 @@
+[Unit]
+Description=ESPSensorStats service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/espsensorstats
+Restart=no
+
+[Install]
+WantedBy=default.target
